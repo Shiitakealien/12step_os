@@ -13,8 +13,12 @@ _intr_softerr:
         mov.1   er1,@-er7
         mov.1   er0,@-er7
         mov.1   er7,er1
+        mov.1   #_intrstack,sp
+        mov.1   er1,@-er7
         mov.w   #SOFTVEC_TYPE_SOFTERR,r0
         jsr     @_interrupt
+        mov.1   @er7+,er1
+        mov.1   er1,er7
         mov.1   @er7+,er0
         mov.1   @er7+,er1
         mov.1   @er7+,er2
@@ -35,8 +39,12 @@ _intr_syscall:
         mov.1   er1,@-er7
         mov.1   er0,@-er7
         mov.1   er7,er1
+        mov.1   #_intrstack,sp
+        mov.1   er1,@-er7
         mov.w   #SOFTVEC_TYPE_SYSCALL,r0
         jsr     @_interrupt
+        mov.1   @er7+,er1
+        mov.1   er1,er7
         mov.1   @er7+,er0
         mov.1   @er7+,er1
         mov.1   @er7+,er2
@@ -57,8 +65,12 @@ _intr_serintr:
         mov.1   er1,@-er7
         mov.1   er0,@-er7
         mov.1   er7,er1
+        mov.1   #_intrstack,sp
+        mov.1   er1,@-er7
         mov.w   #SOFTVEC_TYPE_SERINTR,r0
         jsr     @_interrupt
+        mov.1   @er7+,er1
+        mov.1   er1,er7
         mov.1   @er7+,er0
         mov.1   @er7+,er1
         mov.1   @er7+,er2
