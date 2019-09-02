@@ -3,6 +3,7 @@
 #include "intr.h"
 #include "interrupt.h"
 #include "syscall.h"
+#include "memory.h"
 #include "lib.h"
 
 #define THREAD_NUM 6
@@ -219,6 +220,19 @@ static int thread_chpri(int priority) {
     return old;
 }
 
+/* process system call (kz_malloc()) */
+static void *thread_kmalloc(int size) {
+    putcurrent();
+    return kzmem_alloc(size);
+}
+
+/* process system call (kz_free()) */
+static int thread_kmfree(char *p) {
+    kzmem_free(p);
+    putcurrent();
+    return 0;
+}
+
 /* add a handler into interrupt vector */
 static int setintr(softvec_type_t type, kz_handler_t handler) {
     static void thread_intr(softvec_type_t type, unsigned long sp);
@@ -260,6 +274,12 @@ static void call_functions(kz_syscall_type_t type, kz_syscall_param_t *p) {
         break;
     case KZ_SYSCALL_TYPE_CHPRI: /* kz_chpri() */
         p->un.wait.ret = thread_chpri(p->un.chpri.priority);
+        break;
+    case KZ_SYSCALL_TYPE_KMALLOC: /* kz_kmalloc() */
+        p->un.kmalloc.ret = thread_kmalloc(p->un.kmalloc.size);
+        break;
+    case KZ_SYSCALL_TYPE_KMFREE: /* kz_kmfree() */
+        p->un.kmfree.ret = thread_kmfree(p->un.kmfree.p);
         break;
     default:
         break;
@@ -329,6 +349,8 @@ static void thread_intr(softvec_type_t type, unsigned long sp) {
 }
 
 void kz_start(kz_func_t func, char *name, int priority, int stacksize, int argc, char *argv[]) {
+    kzmem_init(); /* initialize dynamic memory */
+
     /*
      * set current as NULL, since current may be checked
      * in library functions below

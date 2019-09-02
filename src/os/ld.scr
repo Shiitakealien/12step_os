@@ -48,15 +48,19 @@ SECTIONS
         . = ALIGN(4);
         _end = . ;
 
+        .freearea : {
+                _freearea = . ;
+        } > ram
+
         .userstack : {
-                _userstack = .;
+                _userstack = . ;
         } > userstack
 
         .bootstack : {
-                _bootstack = .;
+                _bootstack = . ;
         } > bootstack
 
         .intrstack : {
-                _intrstack = .;
+                _intrstack = . ;
         } > intrstack
 }
