@@ -38,6 +38,32 @@ typedef struct _kz_thread  {
     kz_context context; /* context information */
 } kz_thread;
 
+/* message buffer */
+typedef struct _kz_msgbuf {
+    struct _kz_msgbuf *next;
+    kz_thread *sender; /* thread sending a message */
+    struct { /* store of message parameters */
+        int size;
+        char *p;
+    } param;
+} kz_msgbuf;
+
+/* message box */
+typedef struct _kz_msgbox {
+    kz_thread *receiver; /* thread waiting for a message */
+    kz_msgbuf *head;
+    kz_msgbuf *tail;
+
+    /*
+     * H8 is a 16-bit processor without mult instruction for 32 bit integer, 
+     * so when the size of the struct is not a power of 2, a link error 
+     * of "no __mulsi3" may happen. (the size is a power of 2, shift inst. will
+     * be used.
+     * Instead, pudding may be added for the size to be a power of 2.
+     */
+    long dummy[1];
+} kz_msgbox;
+
 /* thread ready queue */
 static struct {
     kz_thread *head;
@@ -47,6 +73,7 @@ static struct {
 static kz_thread *current; /* current thread */
 static kz_thread threads[THREAD_NUM]; /* task controll block */
 static kz_handler_t handlers[SOFTVEC_TYPE_NUM]; /* interrupt handler */
+static kz_msgbox msgboxes[MSGBOX_ID_NUM]; /* message box */
 
 void dispatch(kz_context *context);
 
@@ -233,6 +260,94 @@ static int thread_kmfree(char *p) {
     return 0;
 }
 
+/* send a message */
+static void sendmsg(kz_msgbox *mboxp, kz_thread *thp, int size, char *p) {
+    kz_msgbuf *mp;
+
+    /* create a message buffer */
+    mp = (kz_msgbuf *)kzmem_alloc(sizeof(*mp));
+    if (mp == NULL)
+        kz_sysdown();
+    mp->next        = NULL;
+    mp->sender      = thp;
+    mp->param.size  = size;
+    mp->param.p     = p;
+
+    /* connect a message to the end of a message box */
+    if (mboxp->tail) {
+        mboxp->tail->next = mp;
+    } else {
+        mboxp->head = mp;
+    }
+    mboxp->tail = mp;
+}
+
+/* receive a message */
+static void recvmsg(kz_msgbox *mboxp) {
+    kz_msgbuf *mp;
+    kz_syscall_param_t *p;
+
+    /* pick a message at the top of the message box */
+    mp = mboxp->head;
+    mboxp->head = mp->next;
+    if (mboxp->head == NULL)
+        mboxp->tail = NULL;
+    mp->next = NULL;
+
+    /* set a value to return to the thread receiving a message */
+    p = mboxp->receiver->syscall.param;
+    p->un.recv.ret = (kz_thread_id_t)mp->sender;
+    if (p->un.recv.sizep)
+        *(p->un.recv.sizep) = mp->param.size;
+    if (p->un.recv.pp)
+        *(p->un.recv.pp) = mp->param.p;
+
+    /* No thread is waiting for a message, return to NULL */
+    mboxp->receiver = NULL;
+
+    /* free a message buffer */
+    kzmem_free(mp);
+}
+
+/* process system call (kz_send()) */
+static int thread_send(kz_msgbox_id_t id, int size, char *p) {
+    kz_msgbox *mboxp = &msgboxes[id];
+
+    putcurrent();
+    sendmsg(mboxp, current, size, p); /* process sending a message */
+
+    /* receive a message when some thread is already waiting for a message */
+    if (mboxp->receiver) {
+        current = mboxp->receiver; /* thread waiting receiving */
+        recvmsg(mboxp); /* process receiving a message */
+        putcurrent(); /* receive a message, so release blocking */
+    }
+
+    return size;
+}
+
+/* process system call (kz_recv()) */
+static kz_thread_id_t thread_recv(kz_msgbox_id_t id, int *sizep, char **p) {
+    kz_msgbox *mboxp = &msgboxes[id];
+
+    if (mboxp->receiver) /* another thread is already waiting for a message */
+        kz_sysdown();
+
+    mboxp->receiver = current; /* set as a thread waiting to receive */
+
+    if (mboxp->head == NULL) {
+        /*
+         * No messages in a message box, so make the thread sleep
+         */
+        return -1;
+    }
+
+    recvmsg(mboxp); /* process receiving a message */
+    putcurrent(); /* complete receiving, so make the thread ready */
+
+    return current->syscall.param->un.recv.ret;
+}
+
 /* add a handler into interrupt vector */
 static int setintr(softvec_type_t type, kz_handler_t handler) {
     static void thread_intr(softvec_type_t type, unsigned long sp);
@@ -280,6 +395,14 @@ static void call_functions(kz_syscall_type_t type, kz_syscall_param_t *p) {
         break;
     case KZ_SYSCALL_TYPE_KMFREE: /* kz_kmfree() */
         p->un.kmfree.ret = thread_kmfree(p->un.kmfree.p);
+        break;
+    case KZ_SYSCALL_TYPE_SEND: /* kz_send() */
+        p->un.send.ret = thread_send(p->un.send.id, p->un.send.size,
+                                        p->un.send.p);
+        break;
+    case KZ_SYSCALL_TYPE_RECV: /* kz_recv() */
+        p->un.recv.ret = thread_recv(p->un.recv.id, p->un.recv.sizep,
+                                        p->un.recv.pp);
         break;
     default:
         break;
@@ -360,6 +483,7 @@ void kz_start(kz_func_t func, char *name, int priority, int stacksize, int argc,
     memset(readyque, 0, sizeof(readyque));
     memset(threads,  0, sizeof(threads));
     memset(handlers, 0, sizeof(handlers));
+    memset(msgboxes, 0, sizeof(msgboxes));
 
     /* register an interrupt handler */
     setintr(SOFTVEC_TYPE_SYSCALL, syscall_intr); /* system call */
