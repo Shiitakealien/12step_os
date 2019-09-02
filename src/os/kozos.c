@@ -348,8 +348,8 @@ static kz_thread_id_t thread_recv(kz_msgbox_id_t id, int *sizep, char **p) {
     return current->syscall.param->un.recv.ret;
 }
 
-/* add a handler into interrupt vector */
-static int setintr(softvec_type_t type, kz_handler_t handler) {
+/* process system call (kz_setintr()) */
+static int thread_setintr(softvec_type_t type, kz_handler_t handler) {
     static void thread_intr(softvec_type_t type, unsigned long sp);
 
     /*
@@ -359,6 +359,7 @@ static int setintr(softvec_type_t type, kz_handler_t handler) {
     softvec_setintr(type, thread_intr);
 
     handlers[type] = handler; /* add interrupt handler called from OS */
+    putcurrent();
 
     return 0;
 }
@@ -404,6 +405,10 @@ static void call_functions(kz_syscall_type_t type, kz_syscall_param_t *p) {
         p->un.recv.ret = thread_recv(p->un.recv.id, p->un.recv.sizep,
                                         p->un.recv.pp);
         break;
+    case KZ_SYSCALL_TYPE_SETINTR: /* kz_setintr() */
+        p->un.setintr.ret = thread_setintr(p->un.setintr.type, 
+                                    p->un.setintr.handler);
+        break;
     default:
         break;
     }
@@ -417,6 +422,18 @@ static void syscall_proc(kz_syscall_type_t type, kz_syscall_param_t *p) {
      * in proccessing function
      */
     getcurrent();
+    call_functions(type, p);
+}
+
+/* process service call */
+static void srvcall_proc(kz_syscall_type_t type, kz_syscall_param_t *p) {
+    /*
+     * some of processes of system and service call refer "current" to get the
+     * ID of calling thread, so keeping "current" valid causes problems.
+     * Service calls are called from interrupt handlen in thread_intrvec(), so
+     * current is set again by scheduler.
+     */
+    current = NULL;
     call_functions(type, p);
 }
 
@@ -458,6 +475,7 @@ static void thread_intr(softvec_type_t type, unsigned long sp) {
      * procces of every interrupt
      * in the case of SOFTVEC_TYPE_SYSCALL or SOFTVEC_TYPE_SOFTERR,
      * call syscall_intr() or softerr_intr() which are registered in handler
+     * In other cases, handler resistered by kz_setintr() will be executed.
      */
     if (handlers[type])
         handlers[type]();
@@ -486,8 +504,8 @@ void kz_start(kz_func_t func, char *name, int priority, int stacksize, int argc,
     memset(msgboxes, 0, sizeof(msgboxes));
 
     /* register an interrupt handler */
-    setintr(SOFTVEC_TYPE_SYSCALL, syscall_intr); /* system call */
-    setintr(SOFTVEC_TYPE_SOFTERR, softerr_intr); /* detect down factor */
+    thread_setintr(SOFTVEC_TYPE_SYSCALL, syscall_intr); /* system call */
+    thread_setintr(SOFTVEC_TYPE_SOFTERR, softerr_intr); /* detect down factor */
 
     /* create thread by call function dircetly */
     current = (kz_thread *)thread_run(func, name, priority, stacksize, argc, argv);
@@ -509,4 +527,8 @@ void kz_syscall(kz_syscall_type_t type, kz_syscall_param_t *param) {
     current->syscall.type = type;
     current->syscall.param = param;
     asm volatile ("trapa #0"); /* issue a trap interrupt */
-} 
+}
+/* library function to call a service call */
+void kz_srvcall(kz_syscall_type_t type, kz_syscall_param_t *param) {
+    srvcall_proc(type, param);
+}
