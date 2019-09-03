@@ -53,11 +53,17 @@ static struct {
 };
 
 /* start a timer */
-int timer_start(int index, int msec) {
+int timer_start(int index, int msec, int flags) {
     volatile struct h8_3069f_tmr *tmr = regs[index].tmr;
     int count;
+    uint8 tcr;
 
-    tmr->tcr0 = H8_3069F_TMR_TCR_OVF | H8_3069F_TMR_TCR_CCLR_CLRCMFA;
+    tcr = H8_3069F_TMR_TCR_OVF;
+    if (flags & TIMER_START_FLAG_CYCLE)
+        tcr |= H8_3069F_TMR_TCR_CCLR_CLRCMFA;
+    else
+        tcr |= H8_3069F_TMR_TCR_CCLR_DISCLR;
+    tmr->tcr0 = tcr;
     tmr->tcr1 = H8_3069F_TMR_TCR_CLK8192 | H8_3069F_TMR_TCR_CCLR_DISCLR;
 
     tmr->tcsr0 = 0;
@@ -99,4 +105,20 @@ int timer_cancel(int index) {
     tmr->tcr0 &= ~H8_3069F_TMR_TCR_CMIEA; /* disable interrupts */
 
     return 0;
+}
+
+int timer_is_running(int index) {
+    volatile struct h8_3069f_tmr *tmr = regs[index].tmr;
+    return (tmr->tcr0 & H8_3069F_TMR_TCR_CMIEA) ? 1 : 0;
+}
+
+int timer_gettime(int index) {
+    volatile struct h8_3069f_tmr *tmr = regs[index].tmr;
+    volatile int count;
+    int msec;
+
+    count = tmr->tcnt;
+    msec = count * 2 / 5; /* 20MHz: (count * 8192 * 1000 / 20,000,000) */
+
+    return timer_is_running(index) ? msec : -1;
 }

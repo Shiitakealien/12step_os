@@ -7,6 +7,8 @@
 static int start_threads(int argc, char *argv[]) {
     kz_run(consdrv_main,  "consdrv",  1, 0x200, 0, NULL);
     kz_run(command_main,  "command",  8, 0x200, 0, NULL);
+    kz_run(timerdrv_main, "command",  2, 0x100, 0, NULL);
+    kz_run(clock_main,    "command",  9, 0x100, 0, NULL);
 
     kz_chpri(15);   /* move idle */
     INTR_ENABLE;    /* enable interrupt */
