@@ -4,6 +4,7 @@ extern void start(void);
 extern void intr_softerr(void);
 extern void intr_syscall(void);
 extern void intr_serintr(void);
+extern void intr_timintr(void);
 
 /*
  * set an interrupt vector
@@ -16,7 +17,8 @@ void (*vectors[])(void) = {
    NULL, NULL,NULL,NULL,NULL,NULL,NULL,NULL, 
    NULL, NULL,NULL,NULL,NULL,NULL,NULL,NULL, 
    NULL, NULL,NULL,NULL,NULL,NULL,NULL,NULL, 
-   NULL, NULL,NULL,NULL,NULL,NULL,NULL,NULL, 
+   intr_timintr, intr_timintr, intr_timintr, intr_timintr, 
+   intr_timintr, intr_timintr, intr_timintr, intr_timintr, 
    NULL, NULL,NULL,NULL,NULL,NULL,NULL,NULL, 
    intr_serintr, intr_serintr, intr_serintr, intr_serintr, 
    intr_serintr, intr_serintr, intr_serintr, intr_serintr, 

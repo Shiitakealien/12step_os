@@ -79,3 +79,29 @@ _intr_serintr:
         mov.1   @er7+,er5
         mov.1   @er7+,er6
         rte
+
+        .global _intr_timintr
+#       .type   _intr_timintr,@function
+_intr_timintr:
+        mov.1   er6,@-er7
+        mov.1   er5,@-er7
+        mov.1   er4,@-er7
+        mov.1   er3,@-er7
+        mov.1   er2,@-er7
+        mov.1   er1,@-er7
+        mov.1   er0,@-er7
+        mov.1   er7,er1
+        mov.1   #_intrstack,sp
+        mov.1   er1,@-er7
+        mov.w   #SOFTVEC_TYPE_TIMINTR,r0
+        jsr     @_interrupt
+        mov.1   @er7+,er1
+        mov.1   er1,er7
+        mov.1   @er7+,er0
+        mov.1   @er7+,er1
+        mov.1   @er7+,er2
+        mov.1   @er7+,er3
+        mov.1   @er7+,er4
+        mov.1   @er7+,er5
+        mov.1   @er7+,er6
+        rte
